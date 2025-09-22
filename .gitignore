@@ -10,7 +10,7 @@ env/
 venv/
 ENV/
 *.sqlite
-*.db
+.db
 
 # VSCode / IDE
 .vscode/

@@ -1,6 +1,6 @@
 import os, asyncio, secrets
 from fastapi import FastAPI, HTTPException, Depends
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from dotenv import load_dotenv
@@ -8,6 +8,8 @@ from typing import List
 
 from .db import init_db, SessionLocal
 from .collector import extraction_loop, setup_event_chain, get_cryptos_from_env
+from .collector_db import insert_cryptos_initial
+from .collector_db import fetch_ohlc  # helper que consultará SQLite
 from .aggregator import table_row, arrays, ohlc   # 🔹 ahora importamos ohlc
 from .schemas import TableResponse, TableRow, ArrayResponse, ArrayPoint
 
@@ -38,6 +40,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.on_event("startup")
 async def startup_event():
     init_db()
+    insert_cryptos_initial()
     setup_event_chain()
     asyncio.create_task(extraction_loop())
 
@@ -63,9 +66,19 @@ async def get_arrays(resolution: str, crypto: str, user: str = Depends(get_curre
         pts = [ArrayPoint(**p) for p in arrays(db, crypto.upper(), resolution)]
         return ArrayResponse(crypto=crypto.upper(), resolution=resolution, points=pts)
 
-# 🔹 Nuevo endpoint: OHLC
+# 🔹 API protegida: OHLC histórico desde SQLite
 @app.get("/api/ohlc/{resolution}/{crypto}")
 async def get_ohlc(resolution: str, crypto: str, user: str = Depends(get_current_user)):
-    with SessionLocal() as db:
-        data = ohlc(db, crypto.upper(), resolution.lower())
-        return {"crypto": crypto.upper(), "resolution": resolution.lower(), "candles": data}
+    resolution = resolution.lower()
+    if resolution not in {"second", "minute", "hour", "day"}:
+        raise HTTPException(status_code=400, detail="Invalid resolution")
+
+    try:
+        candles = fetch_ohlc(crypto.upper(), resolution)
+        return JSONResponse(content={
+            "crypto": crypto.upper(),
+            "resolution": resolution,
+            "candles": candles
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching OHLC: {e}")

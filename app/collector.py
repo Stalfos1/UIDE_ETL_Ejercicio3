@@ -5,6 +5,9 @@ from typing import Callable, Dict, List, Any
 from .utils import parse_amount, now_ts, parse_crypto_pair
 from .db import SessionLocal
 from .crud import insert_price_if_changed
+from .collector_db import insert_price  # Coneccion con SQLite
+from decimal import Decimal
+
 
 COINBASE_BASE = "https://api.coinbase.com/v2/prices"
 
@@ -22,6 +25,9 @@ class EventBus:
                 await res
 
 event_bus = EventBus()
+
+# Últimos precios para calcular señal B/S
+last_prices: Dict[str, Decimal] = {}
 
 def get_cryptos_from_env() -> List[str]:
     raw = os.getenv("CRYPTOS", "BTC-USD,ETH-USD,SOL-USD,DOGE-USD")
@@ -41,7 +47,7 @@ async def fetch_price(client: httpx.AsyncClient, pair: str) -> Dict[str, Any]:
 
 async def extraction_loop():
     cryptos = get_cryptos_from_env()
-    interval = float(os.getenv("FETCH_INTERVAL_SECONDS", "1"))
+    interval = float(os.getenv("FETCH_INTERVAL_SECONDS", "5"))
     async with httpx.AsyncClient() as client:
         while True:
             try:
@@ -79,6 +85,25 @@ def load_handler(payload: Dict[str, Any]) -> None:
             currency=payload["currency"],
             ts=payload["ts"],
         )
+        # Calcular señal simple y guardar en SQLite
+    base = payload["base"]
+    price = payload["amount_dec"]
+    prev_price = last_prices.get(base)
+    if prev_price is None:
+        signal = '-'
+    elif price > prev_price:
+        signal = 'B'
+    elif price < prev_price:
+        signal = 'S'
+    else:
+        signal = '-'
+    last_prices[base] = price
+
+    # Porcentaje de cambio 24h: opcional, podemos dejar None por ahora
+    change_24h = None
+
+    # Insertar en SQLite
+    insert_price(base, price, signal, change_24h)
 
 # Al registrar los handlers, encadenamos: price_raw -> transform_handler -> load_handler
 # price_raw llama a transform y luego a load, de forma secuencial.

@@ -6,71 +6,173 @@
   <title>Crypto Signals ETL</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
-    body { padding: 1rem; }
-    .signal-B { color: green; font-weight: bold; }
-    .signal-S { color: crimson; font-weight: bold; }
-    .signal-- { color: gray; font-weight: bold; }
-    canvas { max-width: 100%; height: 320px; }
+    :root{
+      --ok: #16a34a;    /* green */
+      --bad:#dc2626;    /* red */
+      --mut:#6b7280;    /* gray */
+    }
+    body { padding: 0; }
+    header { position: sticky; top:0; z-index:10; background: var(--pico-background-color); border-bottom: 1px solid var(--pico-muted-border-color); }
+    .brand { font-weight: 700; letter-spacing:.2px; }
+    .tabs { display:flex; gap:.5rem; }
+    .tabs a { padding:.5rem .8rem; border-radius: .6rem; }
+    .tabs a.active { background: var(--pico-muted-border-color); }
+    main { padding: 1rem; }
+    .grid { display: grid; gap: 1rem; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    @media (max-width: 1024px){ .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+    .card { border: 1px solid var(--pico-muted-border-color); border-radius: 14px; padding: 1rem; }
+    .signal-B { color: var(--ok); font-weight: 700; }
+    .signal-S { color: var(--bad); font-weight: 700; }
+    .signal-- { color: var(--mut); font-weight: 700; }
+    .kpi { display:flex; gap:1rem; align-items:center; }
+    .kpi .value{ font-size:1.2rem; font-weight:700; }
+    .tag { font-size:.85rem; padding:.15rem .5rem; border-radius: 999px; border:1px solid var(--pico-muted-border-color); }
+    #chart { width:100%; height:380px; }
+    .muted { color: var(--mut); font-size:.9rem; }
+    .hidden { display:none; }
+  
+    table { white-space: nowrap; min-width: 860px; }
+    th, td { vertical-align: middle; }
+    th { position: sticky; top: 0; background: var(--pico-card-background-color, var(--pico-background-color)); }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.sig { text-align:center; }
+    col.crypto { width: 120px; }
+    col.price { width: 120px; }
+    col.num { width: 120px; }
+  
+    /* --- Stacked layout: tabla arriba, gráfico abajo --- */
+    .stack { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+    #tableWrap { max-height: clamp(220px, 40vh, 520px); overflow: auto; }
+    #chartWrap { height: clamp(260px, 55vh, 680px); }
+    #chart { width: 100%; height: 100%; }
+    @media (max-width: 640px){
+      #tableWrap { max-height: clamp(200px, 45vh, 460px); }
+      #chartWrap { height: clamp(220px, 50vh, 560px); }
+    }
   </style>
+
+
 </head>
 <body>
+  <header class="container-fluid">
+    <nav>
+      <ul>
+        <li class="brand">💹 Crypto Signals ETL</li>
+      </ul>
+      <ul class="tabs">
+        <li><a href="#monitor" class="tab-link active" data-tab="monitor">Monitor</a></li>
+        <li><a href="#analisis" class="tab-link" data-tab="analisis">Análisis</a></li>
+      </ul>
+    </nav>
+  </header>
+
   <main class="container">
-    <h1>📈 Crypto Signals ETL</h1>
-    <p>Extracción incremental (cada segundo), transformación y carga en SQLite. Tabla de 1h y gráfico.</p>
-
-    <article>
-      <h3>Tabla (última hora)</h3>
-      <table role="grid" id="prices-table">
-        <thead>
-          <tr>
-            <th>Crypto</th>
-            <th>Actual Pric.</th>
-            <th>Higest 1H</th>
-            <th>Lower 1H</th>
-            <th>AVG Price</th>
-            <th>Signal (B|S)</th>
-			<th>Volatility 1H</th>
-			<th>% Change 24H</th>
-
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </article>
-
-    <article>
-      <div class="grid">
-        <div>
-          <label for="cryptoSelect">Cripto:</label>
-          <select id="cryptoSelect"></select>
+    <!-- TAB: MONITOR -->
+    <section id="tab-monitor">
+      <div class="stack">
+        <div class="card">
+          <header><h3>Precios y Señales</h3></header>
+          <div class="muted">Se actualiza cada 5s desde <code>/api/table</code>.</div>
+          <div id="tableWrap">
+            <table id="prices-table">
+              <colgroup>
+                <col class="crypto"/>
+                <col class="price"/>
+                <col class="num"/>
+                <col class="num"/>
+                <col class="num"/>
+                <col class="num"/>
+                <col class="num"/>
+                <col class="num"/>
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Crypto</th>
+                  <th>Precio</th>
+                  <th>Máx 1H</th>
+                  <th>Mín 1H</th>
+                  <th>Prom 1H</th>
+                  <th>Volat. 1H</th>
+                  <th>Cambio 24H</th>
+                  <th>Señal</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
-        <div>
-          <label for="resSelect">Resolución:</label>
-          <select id="resSelect">
-            <option value="second">second</option>
-            <option value="minute" selected>minute</option>
-            <option value="hour">hour</option>
-            <option value="day">day</option>
-          </select>
+
+        <div class="card">
+          <header><h3>Gráfico</h3></header>
+          <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
+            <label>
+              <span>Cripto</span>
+              <select id="cryptoSelect"></select>
+            </label>
+            <label>
+              <span>Resolución</span>
+              <select id="resSelect">
+                <option value="second">second</option>
+                <option value="minute" selected>minute</option>
+                <option value="hour">hour</option>
+                <option value="day">day</option>
+              </select>
+            </label>
+            <div class="kpi">
+              <span class="tag">Candles: <code id="pointsCount">0</code></span>
+              <span class="tag">Última: <code id="lastPrice">-</code></span>
+            </div>
+          </div>
+          <div id="chartWrap"><canvas id="chart"></canvas></div>
+          <p class="muted">Fuente: <code>/api/arrays/{{res}}/{{crypto}}</code>. Si tu backend expone OHLC, podemos alternar a velas.</p>
         </div>
       </div>
-      <canvas id="chart"></canvas>
-    </article>
+    </section>
+
+    <!-- TAB: ANALISIS -->
+    <section id="tab-analisis" class="hidden">
+      <div class="grid grid-3">
+        <div class="card">
+          <header><h3>Top 5 Volatilidad (1H)</h3></header>
+          <canvas id="volatilityChart" height="260"></canvas>
+</div>
+        <div class="card">
+          <header><h3>Top 5 Ganadores (24H)</h3></header>
+          <canvas id="gainersChart" height="260"></canvas>
+          <p class="muted">% cambio 24 horas.</p>
+        </div>
+        <div class="card">
+          <header><h3>Distribución de Señales</h3></header>
+          <canvas id="signalsChart" height="260"></canvas>
+          <p class="muted">Conteo actual de señales B/S/-.</p>
+        </div>
+      </div>
+    </section>
   </main>
 
-<!-- Luxon (global) -->
-<script src="https://cdn.jsdelivr.net/npm/luxon/build/global/luxon.min.js"></script>
-
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
-<!-- Financial chart plugin -->
-<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial/dist/chartjs-chart-financial.min.js"></script>
-
-<!-- Chart.js adapter para Luxon -->
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.2.0/dist/chartjs-adapter-luxon.min.js"></script>
-
-<!-- Tu JS -->
-<script src="/static/app.js"></script>
+  <!-- Chart.js core -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Adapter Luxon (fechas) -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.2.0/dist/chartjs-adapter-luxon.min.js"></script>
+  <!-- Financial plugin (opcional si usas velas) -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+  <!-- App logic -->
+  <script src="/static/app.js"></script>
+  <script>
+    // Tabs simples
+    const links = document.querySelectorAll('.tab-link');
+    const tabMonitor = document.getElementById('tab-monitor');
+    const tabAnalisis = document.getElementById('tab-analisis');
+    links.forEach(a => a.addEventListener('click', (e) => {
+      e.preventDefault();
+      links.forEach(x=>x.classList.remove('active'));
+      a.classList.add('active');
+      const tab = a.dataset.tab;
+      tab === 'monitor' ? (tabMonitor.classList.remove('hidden'), tabAnalisis.classList.add('hidden'))
+                        : (tabAnalisis.classList.remove('hidden'), tabMonitor.classList.add('hidden'));
+    }));
+  </script>
 </body>
 </html>

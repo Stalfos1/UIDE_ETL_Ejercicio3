@@ -3,6 +3,7 @@ const AUTH_HEADER = { 'Authorization': 'Basic ' + btoa('admin:1234') }; // Ajust
 
 // ==== Elementos UI ====
 let priceChart, volChart, gainersChart, signalsChart;
+let isDrawing = false;
 const tbody = document.querySelector('#prices-table tbody');
 const cryptoSelect = document.getElementById('cryptoSelect');
 const resSelect = document.getElementById('resSelect');
@@ -77,53 +78,66 @@ async function fetchSeries(crypto, resolution) {
   const res = await fetch(`/api/arrays/${resolution}/${crypto}`, { headers: AUTH_HEADER });
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
-  const labels = data.points.map(p => new Date(p.ts * 1000));
-  const prices = data.points.map(p => parseFloat(p.price));
-  return { labels, prices, crypto: data.crypto, resolution: data.resolution };
+  const points = (data.points || []).map(p => {
+    const ts = (typeof p.ts === 'number') ? p.ts * 1000 : Date.parse(p.ts);
+    const y  = parseNum(p.price);
+    return { x: ts, y };
+  }).filter(pt => Number.isFinite(pt.x) && Number.isFinite(pt.y));
+  return { points, crypto: data.crypto, resolution: data.resolution };
 }
 
 async function drawChart() {
+  if (isDrawing) return;
+  isDrawing = true;
   try {
     const crypto = cryptoSelect.value || (cryptoSelect.options[0] && cryptoSelect.options[0].value);
     const resolution = resSelect.value || 'minute';
-    if (!crypto) return;
+    if (!crypto) { isDrawing = false; return; }
 
-    const { labels, prices } = await fetchSeries(crypto, resolution);
+    const { points } = await fetchSeries(crypto, resolution);
+    const n = points.length;
 
     // KPIs
-    pointsCount.textContent = labels.length;
-    lastPrice.textContent = prices.length ? fmt(prices[prices.length-1]) : '-';
+    pointsCount.textContent = n;
+    lastPrice.textContent = n ? fmt(points[n-1].y) : '-';
 
-    // (re)crear canvas
     const canvas = document.getElementById('chart');
-    if (priceChart) { priceChart.destroy(); }
+    const existing = (typeof Chart?.getChart === 'function') ? (Chart.getChart(canvas) || Chart.getChart('chart')) : null;
+    if (existing) existing.destroy();
+    if (priceChart) { try { priceChart.destroy(); } catch(e){} }
+
+    // Detect si timestamps válidos; si no, usar category
+    const validTime = points.every(p => Number.isFinite(p.x) && p.x > 0);
 
     priceChart = new Chart(canvas.getContext('2d'), {
       type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label: `${crypto} (${resolution})`,
-          data: prices,
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.2,
-          fill: false,
-          borderColor: '#3b82f6'
-        }]
-      },
+      data: { datasets: [{
+        label: `${crypto} (${resolution})`,
+        data: points,
+        parsing: false,
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.2,
+        fill: false,
+        borderColor: '#3b82f6'
+      }]},
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         scales: {
-          x: { type: 'time', time: { unit: resolution === 'day' ? 'day' : resolution === 'hour' ? 'hour' : 'minute' } },
+          x: validTime ? { type: 'time', time: { unit: (resolution==='day'?'day':resolution==='hour'?'hour':'minute') } }
+                       : { type: 'category' },
           y: { beginAtZero: false }
-        },
-        plugins: { legend: { display: true } }
+        }
       }
     });
+
+    priceChart.update();
   } catch (err) {
     console.error('Error en drawChart:', err);
+  } finally {
+    isDrawing = false;
   }
 }
 
@@ -185,7 +199,7 @@ function buildAnalysis(rows) {
 
 // ==== Eventos / timers ====
 setInterval(fetchTable, 5000);  // tabla + paneles
-setInterval(drawChart, 10000);  // gráfico serie
+setInterval(() => { if (!isDrawing) drawChart(); }, 10000);  // gráfico serie
 cryptoSelect.addEventListener('change', drawChart);
 resSelect.addEventListener('change', drawChart);
 

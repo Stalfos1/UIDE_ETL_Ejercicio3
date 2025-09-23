@@ -9,9 +9,9 @@ from typing import List
 from .db import init_db, SessionLocal
 from .collector import extraction_loop, setup_event_chain, get_cryptos_from_env
 from .collector_db import insert_cryptos_initial
-from .collector_db import fetch_ohlc  # helper que consultará SQLite
-from .aggregator import table_row, arrays, ohlc   # 🔹 ahora importamos ohlc
+from .aggregator import table_row, arrays, ohlc
 from .schemas import TableResponse, TableRow, ArrayResponse, ArrayPoint
+from .ohlc_service import generate_and_persist_all_ohlc  # 🔹 nuevo import
 
 # 🔹 Cargar variables de entorno
 load_dotenv()
@@ -36,13 +36,33 @@ def get_current_user(credentials: HTTPBasicCredentials = Depends(security)):
 # 🔹 Servir frontend estático
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# 🔹 Task periódico para actualizar OHLC
+async def periodic_ohlc_update(cryptos, resolutions, interval_sec=600):
+    while True:
+        for crypto in cryptos:
+            for res in resolutions:
+                generate_and_persist_all_ohlc(crypto, res)
+        await asyncio.sleep(interval_sec)
+
 # 🔹 Evento de inicio
 @app.on_event("startup")
 async def startup_event():
     init_db()
     insert_cryptos_initial()
     setup_event_chain()
+
+    # 🔹 Lanzar extracción en background
     asyncio.create_task(extraction_loop())
+
+    # 🔹 Generar y persistir OHLC al iniciar
+    cryptos = get_cryptos_from_env()
+    resolutions = ["second", "minute", "hour", "day"]
+    for crypto in cryptos:
+        for res in resolutions:
+            generate_and_persist_all_ohlc(crypto, res)
+
+    # 🔹 Lanzar un task periódico para actualizar OHLC cada X segundos
+    asyncio.create_task(periodic_ohlc_update(cryptos, resolutions, interval_sec=600))  # cada 10 min
 
 # 🔹 Página principal (UI)
 @app.get("/", response_class=HTMLResponse)
@@ -65,20 +85,3 @@ async def get_arrays(resolution: str, crypto: str, user: str = Depends(get_curre
     with SessionLocal() as db:
         pts = [ArrayPoint(**p) for p in arrays(db, crypto.upper(), resolution)]
         return ArrayResponse(crypto=crypto.upper(), resolution=resolution, points=pts)
-
-# 🔹 API protegida: OHLC histórico desde SQLite
-@app.get("/api/ohlc/{resolution}/{crypto}")
-async def get_ohlc(resolution: str, crypto: str, user: str = Depends(get_current_user)):
-    resolution = resolution.lower()
-    if resolution not in {"second", "minute", "hour", "day"}:
-        raise HTTPException(status_code=400, detail="Invalid resolution")
-
-    try:
-        candles = fetch_ohlc(crypto.upper(), resolution)
-        return JSONResponse(content={
-            "crypto": crypto.upper(),
-            "resolution": resolution,
-            "candles": candles
-        })
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching OHLC: {e}")

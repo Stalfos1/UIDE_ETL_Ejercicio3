@@ -3,42 +3,48 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Crypto Signals ETL</title>
+  <title>📈 Crypto Signals ETL</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
     body { padding: 1rem; }
     .signal-B { color: green; font-weight: bold; }
     .signal-S { color: crimson; font-weight: bold; }
     .signal-- { color: gray; font-weight: bold; }
-    canvas { max-width: 100%; height: 320px; }
+    #chart { width: 100%; height: 400px; }
+    article { margin-bottom: 2rem; }
+    .grid { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    label { font-weight: bold; }
+    table .num { text-align: right; }
   </style>
 </head>
 <body>
   <main class="container">
     <h1>📈 Crypto Signals ETL</h1>
-    <p>Extracción incremental (cada segundo), transformación y carga en SQLite. Tabla de 1h y gráfico.</p>
+    <p>Extracción incremental (cada segundo), transformación y carga en SQLite. Tabla de 1h y gráfico OHLC.</p>
 
+    <!-- Tabla principal -->
     <article>
       <h3>Tabla (última hora)</h3>
       <table role="grid" id="prices-table">
         <thead>
           <tr>
             <th>Crypto</th>
-            <th>Actual Pric.</th>
-            <th>Higest 1H</th>
+            <th>Actual Price</th>
+            <th>Highest 1H</th>
             <th>Lower 1H</th>
             <th>AVG Price</th>
+            <th>Volatility 1H</th>
+            <th>% Change 24H</th>
             <th>Signal (B|S)</th>
-			<th>Volatility 1H</th>
-			<th>% Change 24H</th>
-
           </tr>
         </thead>
         <tbody></tbody>
       </table>
     </article>
 
+    <!-- Gráfico OHLC principal -->
     <article>
+      <h3>Gráfico OHLC</h3>
       <div class="grid">
         <div>
           <label for="cryptoSelect">Cripto:</label>
@@ -47,30 +53,20 @@
         <div>
           <label for="resSelect">Resolución:</label>
           <select id="resSelect">
-            <option value="second">second</option>
-            <option value="minute" selected>minute</option>
-            <option value="hour">hour</option>
-            <option value="day">day</option>
+            <option value="second">Segundo</option>
+            <option value="minute" selected>Minuto</option>
+            <option value="hour">Hora</option>
           </select>
         </div>
       </div>
-      <canvas id="chart"></canvas>
+      <div id="chart"></div>
     </article>
   </main>
 
-<!-- Luxon (global) -->
-<script src="https://cdn.jsdelivr.net/npm/luxon/build/global/luxon.min.js"></script>
+  <!-- Librería Plotly -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
-<!-- Financial chart plugin -->
-<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial/dist/chartjs-chart-financial.min.js"></script>
-
-<!-- Chart.js adapter para Luxon -->
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.2.0/dist/chartjs-adapter-luxon.min.js"></script>
-
-<!-- Tu JS -->
-<script src="/static/app.js"></script>
+  <!-- Tu JS -->
+  <script src="/static/app.js"></script>
 </body>
 </html>
